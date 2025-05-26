@@ -78,45 +78,25 @@ async def process_csv(
     """
     Endpoint to process the uploaded CSV file asynchronously.
     """
-    # Start the background task
     df = get_data(target_product_id)
+    df = df[df["TANGGAL"] <= pd.to_datetime(start_date)]
 
-    if start_date and end_date:
-        df["TANGGAL"] = pd.to_datetime(df["TANGGAL"])  # Ensure TANGGAL is in datetime format
-        
-        # Create date range from a fixed start or earliest available date
-        fill_start = df["TANGGAL"].min()
-        fill_end = pd.to_datetime(start_date) + timedelta(days=1)
-        
-        if fill_start <= fill_end:
-            date_range = pd.date_range(start=fill_start, end=fill_end, freq="D")
-            fill_df = pd.DataFrame({
-                "TANGGAL": date_range,
-                "BERAT_TOTAL": 0  # You can add more columns with 0s or defaults as needed
-            })
-
-            # Filter the original df to only before start_date (optional)
-            df = df[df["TANGGAL"] <= pd.to_datetime(start_date)]
-
-            # Combine
-            df = pd.concat([fill_df, df], ignore_index=True)
-
-        if df.empty:
-            raise HTTPException(status_code=404, detail="No data found for the specified product ID.")
-    
     file_path = os.path.join(UPLOAD_DIR, "train.csv")
     df.to_csv(file_path, index=False)
 
-    future_step = (end_date - start_date).days if start_date and end_date else 0
+    # Convert date to string for Celery serialization
+    start_date_str = start_date.isoformat() if start_date else None
+    end_date_str = end_date.isoformat() if end_date else None
+
+    future_step = (end_date - df["TANGGAL"].max().date()).days + 1 if start_date and end_date else 0
     task = process_csv_task.apply_async(
-        args=[file_path, target_product_id],
-        kwargs={"future_step": future_step},
-        countdown=5  # Delay the task by 5 seconds
+        args=[file_path, target_product_id, future_step, start_date_str, end_date_str],
+        countdown=5
     )
 
     if not task:
         raise HTTPException(status_code=500, detail="Task submission failed.")
-    
+
     return JSONResponse(
         {"message": "CSV processing started.", "task_id": task.id},
         status_code=202

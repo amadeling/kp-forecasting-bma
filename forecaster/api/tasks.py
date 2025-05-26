@@ -12,7 +12,7 @@ celery = Celery(
 )
 
 @celery.task
-def process_csv_task(filepath: str, target_product_id: str, future_step: int = 0):
+def process_csv_task(filepath: str, target_product_id: str, future_step: int = 0, start_date: str = None, end_date: str = None):
     if future_step <= 0:
         # If future_step is not provided or is less than or equal to 0, set it to 1
         future_step = 365
@@ -22,6 +22,11 @@ def process_csv_task(filepath: str, target_product_id: str, future_step: int = 0
         return {"status": "failed"}
 
     future_df = results["future_forecast"]
+
+    # Filter date range if start_date and end_date are provided
+    if start_date and end_date:
+        future_df = future_df[(future_df["TANGGAL"] >= start_date) & (future_df["TANGGAL"] <= end_date)]
+
     # Convert TANGGAL (Timestamp) to ISO‐formatted string for JSON serialization
     future_df["TANGGAL"] = future_df["TANGGAL"].dt.strftime("%Y-%m-%d")
 
